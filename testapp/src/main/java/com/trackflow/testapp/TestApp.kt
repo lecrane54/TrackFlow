@@ -10,6 +10,7 @@ import com.trackflow.core.provider.AnalyticsProvider
 import com.trackflow.core.provider.ProviderEvent
 import com.trackflow.core.provider.ProviderEventMapper
 import com.trackflow.provider.adobe.analytics.AdobeAnalyticsProvider
+import com.trackflow.provider.amplitude.AmplitudeProvider
 
 class TestApp : Application() {
 
@@ -19,7 +20,8 @@ class TestApp : Application() {
         TrackFlow.initialize(
             TrackFlow.Builder(applicationContext)
                 .addProvider(LogcatProvider())
-                .addProvider(AdobeAnalyticsProvider(""))
+                .addProvider(AdobeAnalyticsProvider(BuildConfig.ADOBE_KEY))
+                .addProvider(AmplitudeProvider(BuildConfig.AMP_KEY))
                 .batchSize(5)
                 .flushInterval(10_000L)
                 .logLevel(LogLevel.VERBOSE)

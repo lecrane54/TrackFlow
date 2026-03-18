@@ -31,12 +31,27 @@ import com.trackflow.core.payload.AnalyticsPayload
  * ```
  */
 fun interface TrackFlowMiddleware {
+    /**
+     * Processes a single analytics payload before it is dispatched to providers.
+     *
+     * Implementations may return:
+     * - A modified copy of [payload] to transform the event (e.g., scrub PII, enrich data).
+     * - The original [payload] unchanged to pass the event through.
+     * - `null` to drop the event entirely, preventing it from reaching any provider.
+     *
+     * @param payload The analytics payload to process.
+     * @return The (possibly modified) payload, or `null` to discard the event.
+     */
     fun process(payload: AnalyticsPayload): AnalyticsPayload?
 }
 
 /**
  * Runs a payload through a chain of middleware in order.
  * Returns null if any middleware drops the event.
+ *
+ * @receiver The ordered list of [TrackFlowMiddleware] to apply sequentially.
+ * @param payload The initial [AnalyticsPayload] to process.
+ * @return The final transformed payload, or `null` if any middleware in the chain returned `null`.
  */
 internal fun List<TrackFlowMiddleware>.applyAll(payload: AnalyticsPayload): AnalyticsPayload? {
     var current: AnalyticsPayload? = payload
