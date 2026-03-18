@@ -1,0 +1,47 @@
+package com.trackflow.core.middleware
+
+import com.trackflow.core.payload.AnalyticsPayload
+
+/**
+ * Middleware that can intercept, transform, or filter events
+ * before they reach the provider pipeline.
+ *
+ * Return a modified [AnalyticsPayload] to transform the event,
+ * or return null to drop the event entirely.
+ *
+ * Example — PII scrubber:
+ * ```
+ * class PiiScrubber : TrackFlowMiddleware {
+ *     private val piiKeys = setOf("email", "phone", "ssn")
+ *     override fun process(payload: AnalyticsPayload): AnalyticsPayload {
+ *         return payload.copy(
+ *             properties = payload.properties.filterKeys { it !in piiKeys }
+ *         )
+ *     }
+ * }
+ * ```
+ *
+ * Example — event sampler:
+ * ```
+ * class Sampler(private val rate: Double = 0.1) : TrackFlowMiddleware {
+ *     override fun process(payload: AnalyticsPayload): AnalyticsPayload? {
+ *         return if (Math.random() < rate) payload else null
+ *     }
+ * }
+ * ```
+ */
+fun interface TrackFlowMiddleware {
+    fun process(payload: AnalyticsPayload): AnalyticsPayload?
+}
+
+/**
+ * Runs a payload through a chain of middleware in order.
+ * Returns null if any middleware drops the event.
+ */
+internal fun List<TrackFlowMiddleware>.applyAll(payload: AnalyticsPayload): AnalyticsPayload? {
+    var current: AnalyticsPayload? = payload
+    for (middleware in this) {
+        current = current?.let { middleware.process(it) } ?: return null
+    }
+    return current
+}

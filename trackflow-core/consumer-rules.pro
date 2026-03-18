@@ -1,0 +1,12 @@
+# TrackFlow Core - public API classes
+-keep class com.trackflow.core.TrackFlow { *; }
+-keep class com.trackflow.core.TrackFlow$Builder { *; }
+-keep interface com.trackflow.core.event.TrackFlowEvent { *; }
+-keep interface com.trackflow.core.event.ProviderExtras { *; }
+-keep class com.trackflow.core.payload.AnalyticsPayload { *; }
+-keep interface com.trackflow.core.provider.AnalyticsProvider { *; }
+-keep interface com.trackflow.core.provider.ProviderEventMapper { *; }
+-keep class com.trackflow.core.provider.ProviderEvent { *; }
+-keep class com.trackflow.core.logging.LogLevel { *; }
+-keep interface com.trackflow.core.logging.TrackFlowLogListener { *; }
+-keep class com.trackflow.core.compose.TrackScreenKt { *; }
