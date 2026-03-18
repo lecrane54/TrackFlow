@@ -1,0 +1,27 @@
+platform :ios, '15.0'
+
+target 'TrackFlowTestApp' do
+  use_frameworks! :linkage => :dynamic
+
+  # TrackFlow KMP core
+  pod 'trackflow_core', :path => '../trackflow-core'
+
+  # TrackFlow KMP providers
+  pod 'trackflow_provider_firebase_ios', :path => '../trackflow-provider-firebase-ios'
+  pod 'trackflow_provider_amplitude_ios', :path => '../trackflow-provider-amplitude-ios'
+  pod 'trackflow_provider_mixpanel_ios', :path => '../trackflow-provider-mixpanel-ios'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
+      config.build_settings['OTHER_LDFLAGS'] << '-ObjC'
+    end
+  end
+
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+  end
+end

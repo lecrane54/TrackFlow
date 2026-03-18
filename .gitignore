@@ -1,0 +1,97 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+**/build/
+
+# Local configuration
+local.properties
+
+# Android Studio
+*.iml
+.idea/
+.DS_Store
+
+# Signing files
+*.jks
+*.keystore
+
+# Google Services (contains API keys)
+google-services.json
+
+# ProGuard
+proguard/
+
+# Log files
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Kotlin
+*.kotlin_module
+
+# Captures (Android Studio profiling)
+captures/
+
+# IntelliJ
+*.iws
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/.name
+# Gradle daemon JVM config (IDE-specific)
+gradle/gradle-daemon-jvm.properties
+
+# Kotlin/Native
+.konan/
+*.framework
+!**/build/cocoapods/  # exclude generated cocoapods frameworks
+
+# CocoaPods
+**/Pods/
+**/Podfile.lock
+
+# Xcode
+*.xcworkspace
+*.xcodeproj
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.perspectivev3
+!default.perspectivev3
+
+# Secrets
+Secrets.xcconfig
+
+# Claude Code
+.claude/
+.kotlin/

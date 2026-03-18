@@ -1,0 +1,21 @@
+name: TrackFlowTestApp
+options:
+  bundleIdPrefix: com.trackflow
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  SWIFT_VERSION: "5.0"
+  OTHER_LDFLAGS: "$(inherited) -ObjC"
+configFiles:
+  Debug: Secrets.xcconfig
+  Release: Secrets.xcconfig
+targets:
+  TrackFlowTestApp:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.trackflow.testapp.ios
+      INFOPLIST_FILE: Sources/Info.plist
+      DEVELOPMENT_TEAM: ""

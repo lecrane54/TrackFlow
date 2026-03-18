@@ -1,0 +1,434 @@
+package com.trackflow.core
+
+import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import com.trackflow.core.debug.DebugEventSink
+import com.trackflow.core.debug.EventMonitor
+import com.trackflow.core.event.TrackFlowEvent
+import com.trackflow.core.identity.IdentityListener
+import com.trackflow.core.identity.IdentityManager
+import com.trackflow.core.license.Features
+import com.trackflow.core.license.LicenseManager
+import com.trackflow.core.license.LicenseStatus
+import com.trackflow.core.logging.LogLevel
+import com.trackflow.core.logging.TrackFlowLogListener
+import com.trackflow.core.logging.TrackFlowLogger
+import com.trackflow.core.middleware.TrackFlowMiddleware
+import com.trackflow.core.middleware.applyAll
+import com.trackflow.core.payload.AnalyticsPayload
+import com.trackflow.core.payload.EventType
+import com.trackflow.core.pipeline.EventBatcher
+import com.trackflow.core.pipeline.EventDeduplicator
+import com.trackflow.core.pipeline.EventDispatcher
+import com.trackflow.core.platform.PlatformContext
+import com.trackflow.core.platform.currentTimeMillis
+import com.trackflow.core.platform.isDebugBuild
+import com.trackflow.core.provider.AnalyticsProvider
+import com.trackflow.core.session.SessionManager
+
+/**
+ * Main entry point for the TrackFlow analytics SDK.
+ *
+ * TrackFlow is a singleton that manages the complete analytics pipeline:
+ * event ingestion, context enrichment, middleware processing, deduplication,
+ * batching, and distribution to multiple analytics providers.
+ *
+ * Must be initialized via [initialize] before any tracking calls.
+ */
+object TrackFlow {
+
+    private lateinit var providers: List<AnalyticsProvider>
+    private val sessionManager = SessionManager()
+    private val debugSink = DebugEventSink()
+    private val identityManager = IdentityManager()
+    private val _eventMonitor = EventMonitor()
+    private val licenseManager = LicenseManager()
+
+    private var batcher: EventBatcher? = null
+    private var dispatcher: EventDispatcher? = null
+    private var middlewares: List<TrackFlowMiddleware> = emptyList()
+
+    private val superProperties = mutableMapOf<String, Any?>()
+    private val superPropertiesLock = SynchronizedObject()
+
+    @Volatile
+    private var isInitialized = false
+
+    /**
+     * Initializes the TrackFlow SDK with the given [builder] configuration.
+     *
+     * Sets up providers, pipeline (batcher + dispatcher + deduplicator),
+     * middleware, super properties, logging, and identity.
+     * Must be called once before any tracking calls.
+     *
+     * @param builder The configured [Builder] instance.
+     */
+    fun initialize(builder: Builder) {
+        // Clean up previous initialization if re-initializing
+        if (isInitialized) {
+            shutdown()
+        }
+
+        // Validate license
+        licenseManager.validate(builder.licenseKey)
+
+        TrackFlowLogger.level = builder.logLevel
+        TrackFlowLogger.listener = builder.logListener
+
+        // Gate middleware behind license
+        middlewares = if (licenseManager.isFeatureEnabled(Features.MIDDLEWARE)) {
+            builder.middlewares.toList()
+        } else {
+            if (builder.middlewares.isNotEmpty()) {
+                TrackFlowLogger.warn("Middleware requires a Pro license — ignored")
+            }
+            emptyList()
+        }
+
+        // Enforce provider licensing
+        // Free tier: open-source providers only (firebase, amplitude, mixpanel)
+        // Pro/Enterprise: all providers including Adobe Analytics, Adobe Edge, etc.
+        // Debug builds: warn but allow paid providers for testing convenience
+        // Release builds: strictly drop unlicensed paid providers
+        val isDebug = isDebugBuild(builder.context)
+        providers = builder.providers.filter { provider ->
+            if (licenseManager.isProviderAllowed(provider.key)) {
+                true
+            } else if (isDebug) {
+                TrackFlowLogger.warn(
+                    "Provider '${provider.key}' requires a Pro license. " +
+                    "Allowed in debug builds for testing — " +
+                    "release builds will block this provider. " +
+                    "Upgrade at https://trackflow.dev/pricing"
+                )
+                true
+            } else {
+                TrackFlowLogger.warn(
+                    "Provider '${provider.key}' requires a Pro license and was not loaded. " +
+                    "Upgrade at https://trackflow.dev/pricing"
+                )
+                false
+            }
+        }
+
+        synchronized(superPropertiesLock) {
+            superProperties.clear()
+            superProperties.putAll(builder.superProperties)
+        }
+
+        identityManager.addListener(object : IdentityListener {
+            override fun onIdentify(userId: String, traits: Map<String, Any?>) {
+                providers.forEach { provider ->
+                    try {
+                        provider.identify(userId, traits)
+                    } catch (e: Exception) {
+                        TrackFlowLogger.error("Failed to identify on ${provider.key}", e)
+                    }
+                }
+            }
+            override fun onReset() {
+                providers.forEach { provider ->
+                    try {
+                        provider.reset()
+                    } catch (e: Exception) {
+                        TrackFlowLogger.error("Failed to reset on ${provider.key}", e)
+                    }
+                }
+            }
+        })
+
+        providers.forEach { provider ->
+            try {
+                provider.initialize(builder.context)
+            } catch (e: Exception) {
+                TrackFlowLogger.error("Failed to initialize provider: ${provider.key}", e)
+            }
+        }
+
+        val deduplicator = if (builder.deduplicationWindowMs > 0 &&
+            licenseManager.isFeatureEnabled(Features.DEDUPLICATION)
+        ) {
+            EventDeduplicator(builder.deduplicationWindowMs)
+        } else {
+            if (builder.deduplicationWindowMs > 0) {
+                TrackFlowLogger.warn("Deduplication requires a Pro license — ignored")
+            }
+            null
+        }
+
+        val eventDispatcher = EventDispatcher(
+            context = builder.context,
+            providers = providers,
+            deduplicator = deduplicator,
+            eventMonitor = _eventMonitor
+        )
+        dispatcher = eventDispatcher
+        eventDispatcher.start()
+
+        val eventBatcher = EventBatcher(
+            maxBatchSize = builder.batchSize,
+            flushIntervalMs = builder.flushIntervalMs,
+            onFlush = { batch -> eventDispatcher.dispatch(batch) }
+        )
+        batcher = eventBatcher
+        eventBatcher.start()
+
+        isInitialized = true
+        TrackFlowLogger.debug("TrackFlow initialized with ${providers.size} providers")
+    }
+
+    // ── Track Actions ───────────────────────────────────────
+
+    /** Tracks an action event using a [TrackFlowEvent] instance. */
+    fun track(event: TrackFlowEvent) {
+        enqueue(event, EventType.ACTION)
+    }
+
+    /** Tracks an action event with the given [name] and optional property pairs. */
+    fun track(name: String, vararg properties: Pair<String, Any?>) {
+        track(name, properties.toMap())
+    }
+
+    /** Tracks an action event with the given [name] and [properties] map. */
+    fun track(name: String, properties: Map<String, Any?> = emptyMap()) {
+        track(SimpleEvent(name, properties))
+    }
+
+    // ── Track State / Page Views ────────────────────────────
+
+    /** Tracks a state/page-view event. Routed to provider-specific trackState methods. */
+    fun trackState(event: TrackFlowEvent) {
+        enqueue(event, EventType.STATE)
+    }
+
+    /** Tracks a state/page-view event with the given [name] and optional property pairs. */
+    fun trackState(name: String, vararg properties: Pair<String, Any?>) {
+        trackState(name, properties.toMap())
+    }
+
+    /** Tracks a state/page-view event with the given [name] and [properties] map. */
+    fun trackState(name: String, properties: Map<String, Any?> = emptyMap()) {
+        trackState(SimpleEvent(name, properties))
+    }
+
+    // ── Identity ────────────────────────────────────────────
+
+    /** Identifies the current user. Propagates to all providers. */
+    fun identify(userId: String, vararg traits: Pair<String, Any?>) {
+        identify(userId, traits.toMap())
+    }
+
+    /** Identifies the current user with [userId] and [traits]. */
+    fun identify(userId: String, traits: Map<String, Any?> = emptyMap()) {
+        identityManager.identify(userId, traits)
+        TrackFlowLogger.debug("Identified user: $userId")
+    }
+
+    /** Resets user identity and rotates the session. Call on logout. */
+    fun resetIdentity() {
+        identityManager.reset()
+        sessionManager.reset()
+        TrackFlowLogger.debug("Identity and session reset")
+    }
+
+    /** Returns the currently identified user ID, or null. */
+    fun userId(): String? = identityManager.userId
+
+    // ── Super Properties ────────────────────────────────────
+
+    /** Sets super properties merged into every event. Event properties override on conflict. */
+    fun setSuperProperties(vararg properties: Pair<String, Any?>) {
+        synchronized(superPropertiesLock) { superProperties.putAll(properties) }
+    }
+
+    /** Sets super properties from a map. */
+    fun setSuperProperties(properties: Map<String, Any?>) {
+        synchronized(superPropertiesLock) { superProperties.putAll(properties) }
+    }
+
+    /** Removes a single super property by [key]. */
+    fun removeSuperProperty(key: String) {
+        synchronized(superPropertiesLock) { superProperties.remove(key) }
+    }
+
+    /** Clears all super properties. */
+    fun clearSuperProperties() {
+        synchronized(superPropertiesLock) { superProperties.clear() }
+    }
+
+    /** Returns a snapshot of current super properties. */
+    fun superProperties(): Map<String, Any?> {
+        synchronized(superPropertiesLock) { return superProperties.toMap() }
+    }
+
+    // ── Event Monitor ───────────────────────────────────────
+
+    /**
+     * Returns the live [EventMonitor] for observing event delivery in real time.
+     *
+     * Requires a Pro or Enterprise license. Returns the monitor regardless,
+     * but delivery recording is only active with a valid license.
+     */
+    fun eventMonitor(): EventMonitor = _eventMonitor
+
+    /** Returns the current license status. */
+    fun licenseStatus(): LicenseStatus = licenseManager.status
+
+    /** Checks if a specific feature is enabled for the current license. */
+    fun isFeatureEnabled(feature: String): Boolean = licenseManager.isFeatureEnabled(feature)
+
+    // ── Pipeline ────────────────────────────────────────────
+
+    private fun enqueue(event: TrackFlowEvent, type: EventType) {
+        if (!isInitialized) {
+            TrackFlowLogger.error("TrackFlow called before initialize()")
+            return
+        }
+
+        // Merge super properties + event properties with minimal allocation
+        val eventProps = event.properties
+        val mergedProperties: Map<String, Any?>
+        val superSnap = synchronized(superPropertiesLock) {
+            if (superProperties.isEmpty()) null else superProperties.toMap()
+        }
+        mergedProperties = if (superSnap == null) {
+            eventProps
+        } else if (eventProps.isEmpty()) {
+            superSnap
+        } else {
+            LinkedHashMap<String, Any?>(superSnap.size + eventProps.size).apply {
+                putAll(superSnap)
+                putAll(eventProps) // event props override super props
+            }
+        }
+
+        // Build context map without buildMap overhead
+        val userId = identityManager.userId
+        val contextMap = if (userId != null) {
+            mapOf("session_id" to sessionManager.session(), "user_id" to userId)
+        } else {
+            mapOf<String, Any?>("session_id" to sessionManager.session())
+        }
+
+        var payload: AnalyticsPayload? = AnalyticsPayload(
+            eventName = event.name,
+            properties = mergedProperties,
+            providerExtras = event.providerExtras,
+            context = contextMap,
+            timestamp = currentTimeMillis(),
+            type = type
+        )
+
+        payload = middlewares.applyAll(payload!!)
+        if (payload == null) {
+            TrackFlowLogger.debug("Event '${event.name}' dropped by middleware")
+            _eventMonitor.recordDropped(event.name)
+            return
+        }
+
+        debugSink.record(payload)
+        batcher?.enqueue(payload)
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────
+
+    /** Forces an immediate flush of all buffered events. */
+    fun flush() {
+        if (!isInitialized) {
+            TrackFlowLogger.error("TrackFlow.flush() called before initialize()")
+            return
+        }
+        batcher?.flush()
+    }
+
+    /** Shuts down the pipeline. Flushes remaining events and stops all components. */
+    fun shutdown() {
+        if (!isInitialized) return
+        batcher?.stop()
+        dispatcher?.stop()
+        isInitialized = false
+        TrackFlowLogger.debug("TrackFlow shut down")
+    }
+
+    /** Returns all events processed through the pipeline for debugging. */
+    fun debugEvents(): List<AnalyticsPayload> = debugSink.events()
+
+    // ── Internal ────────────────────────────────────────────
+
+    private class SimpleEvent(
+        override val name: String,
+        override val properties: Map<String, Any?>
+    ) : TrackFlowEvent
+
+    /**
+     * Fluent builder for configuring and initializing [TrackFlow].
+     *
+     * @param context The platform context.
+     */
+    class Builder(val context: PlatformContext) {
+
+        internal val providers = mutableListOf<AnalyticsProvider>()
+        internal val middlewares = mutableListOf<TrackFlowMiddleware>()
+        internal val superProperties = mutableMapOf<String, Any?>()
+        internal var batchSize: Int = 20
+        internal var flushIntervalMs: Long = 30_000L
+        internal var logLevel: LogLevel = LogLevel.ERROR
+        internal var logListener: TrackFlowLogListener? = null
+        internal var deduplicationWindowMs: Long = 0L
+        internal var licenseKey: String? = null
+
+        /**
+         * Sets the license key for TrackFlow.
+         *
+         * Without a key, the SDK runs in free tier (open-source providers only).
+         * Get a key at https://trackflow.dev/pricing
+         *
+         * @param key License key in format "tf_pro_xxx" or "tf_ent_xxx".
+         */
+        fun licenseKey(key: String) = apply { licenseKey = key }
+
+        /** Registers an analytics provider. */
+        fun addProvider(provider: AnalyticsProvider) = apply { providers += provider }
+
+        /** Adds a middleware interceptor to the processing chain. */
+        fun addMiddleware(middleware: TrackFlowMiddleware) = apply { middlewares += middleware }
+
+        /** Sets initial super properties. */
+        fun superProperties(vararg properties: Pair<String, Any?>) = apply {
+            superProperties.putAll(properties)
+        }
+
+        /** Sets initial super properties from a map. */
+        fun superProperties(properties: Map<String, Any?>) = apply {
+            superProperties.putAll(properties)
+        }
+
+        /** Sets the batch size before auto-flush. Default 20. */
+        fun batchSize(size: Int) = apply { batchSize = size }
+
+        /** Sets the auto-flush interval in milliseconds. Default 30000ms. */
+        fun flushInterval(ms: Long) = apply { flushIntervalMs = ms }
+
+        /** Sets the internal log level. Default [LogLevel.ERROR]. */
+        fun logLevel(level: LogLevel) = apply { logLevel = level }
+
+        /** Sets a listener for external log capture. */
+        fun logListener(listener: TrackFlowLogListener) = apply { logListener = listener }
+
+        /**
+         * Enables event deduplication within the given time window.
+         *
+         * Events with identical name, type, and properties within [windowMs]
+         * are dropped. Protects against double-taps and retry-induced duplicates.
+         *
+         * @param windowMs Deduplication window in milliseconds. Default 1000ms.
+         */
+        fun enableDeduplication(windowMs: Long = 1_000L) = apply {
+            deduplicationWindowMs = windowMs
+        }
+
+        /** Finalizes the builder. Pass to [TrackFlow.initialize]. */
+        fun build(): Builder = this
+    }
+}

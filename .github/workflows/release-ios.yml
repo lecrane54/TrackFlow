@@ -1,0 +1,140 @@
+name: Release iOS → Private CocoaPods Spec Repo
+
+# Publishes all TrackFlow podspecs to a private CocoaPods spec repo on tag push.
+#
+# Required GitHub Secrets:
+#   COCOAPODS_SPEC_REPO  – Git URL of your private spec repo
+#                          e.g. https://github.com/lecrane54/TrackFlow-Specs.git
+#   SPEC_REPO_TOKEN      – GitHub PAT with write access to the spec repo
+#                          (used as: https://<token>@github.com/...)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-ios-release-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-ios-
+
+      - name: Install CocoaPods
+        run: brew install cocoapods
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $TAG_VERSION"
+
+      - name: Validate tag matches gradle version
+        run: |
+          GRADLE_VERSION=$(grep 'trackflow.version' gradle.properties | cut -d'=' -f2)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$GRADLE_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: Tag version ($TAG_VERSION) does not match gradle.properties ($GRADLE_VERSION)"
+            exit 1
+          fi
+
+      - name: Generate podspecs
+        run: ./gradlew podspec --no-daemon
+
+      - name: Build all iOS frameworks (arm64 + simulator)
+        run: |
+          ./gradlew \
+            :trackflow-core:compileKotlinIosArm64 \
+            :trackflow-core:compileKotlinIosSimulatorArm64 \
+            :trackflow-provider-firebase-ios:compileKotlinIosArm64 \
+            :trackflow-provider-firebase-ios:compileKotlinIosSimulatorArm64 \
+            :trackflow-provider-amplitude-ios:compileKotlinIosArm64 \
+            :trackflow-provider-amplitude-ios:compileKotlinIosSimulatorArm64 \
+            :trackflow-provider-mixpanel-ios:compileKotlinIosArm64 \
+            :trackflow-provider-mixpanel-ios:compileKotlinIosSimulatorArm64 \
+            --no-daemon
+
+      - name: Build frameworks for distribution
+        run: |
+          ./gradlew \
+            :trackflow-core:syncFramework \
+            :trackflow-provider-firebase-ios:syncFramework \
+            :trackflow-provider-amplitude-ios:syncFramework \
+            :trackflow-provider-mixpanel-ios:syncFramework \
+            -Pkotlin.native.cocoapods.platform=iphonesimulator \
+            -Pkotlin.native.cocoapods.archs=arm64 \
+            -Pkotlin.native.cocoapods.configuration=Release \
+            --no-daemon
+
+      - name: Verify test app builds
+        run: |
+          ./gradlew generateDummyFramework --no-daemon
+          cd testapp-ios && pod install && cd ..
+          xcodebuild -workspace testapp-ios/TrackFlowTestApp.xcworkspace \
+            -scheme TrackFlowTestApp \
+            -sdk iphonesimulator \
+            -arch arm64 \
+            -configuration Release \
+            -derivedDataPath build \
+            OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED=YES \
+            build
+
+      - name: Add private spec repo
+        env:
+          SPEC_REPO_TOKEN: ${{ secrets.SPEC_REPO_TOKEN }}
+          COCOAPODS_SPEC_REPO: ${{ secrets.COCOAPODS_SPEC_REPO }}
+        run: |
+          # Insert token into the repo URL for auth
+          AUTHED_URL=$(echo "$COCOAPODS_SPEC_REPO" | sed "s|https://|https://${SPEC_REPO_TOKEN}@|")
+          pod repo add trackflow-specs "$AUTHED_URL"
+
+      - name: Push podspecs to private spec repo
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # Update podspec source URLs to point to the tagged release
+          RELEASE_URL="https://github.com/lecrane54/TrackFlow/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+
+          # Push specs in dependency order (core first, then providers)
+          SPECS=(
+            "trackflow-core/trackflow_core.podspec"
+            "trackflow-provider-firebase-ios/trackflow_provider_firebase_ios.podspec"
+            "trackflow-provider-amplitude-ios/trackflow_provider_amplitude_ios.podspec"
+            "trackflow-provider-mixpanel-ios/trackflow_provider_mixpanel_ios.podspec"
+          )
+
+          for SPEC in "${SPECS[@]}"; do
+            echo "Pushing $SPEC..."
+            pod repo push trackflow-specs "$SPEC" --allow-warnings --skip-tests
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
