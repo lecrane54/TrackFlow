@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Buffers analytics events and flushes them in batches to reduce network overhead.
@@ -106,7 +107,15 @@ internal class EventBatcher(
      * until [start] is called again.
      */
     fun stop() {
-        flush()
+        val batch: List<AnalyticsPayload>
+        synchronized(lock) {
+            batch = buffer.toList()
+            buffer.clear()
+        }
+        if (batch.isNotEmpty()) {
+            runBlocking { onFlush(batch) }
+        }
+        timerJob?.cancel()
         scope?.cancel()
         scope = null
     }

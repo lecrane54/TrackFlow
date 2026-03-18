@@ -16,14 +16,15 @@ class TestApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val adobeMappers = mapOf("screen_name" to "pageName", "click_count" to "clickCounter", "screen" to "pageName")
 
         TrackFlow.initialize(
             TrackFlow.Builder(applicationContext)
-                .addProvider(LogcatProvider())
-                .addProvider(AdobeAnalyticsProvider(BuildConfig.ADOBE_KEY))
+  //              .addProvider(LogcatProvider())
+                .addProvider(AdobeAnalyticsProvider(BuildConfig.ADOBE_KEY, keyMap = adobeMappers))
                 .addProvider(AmplitudeProvider(BuildConfig.AMP_KEY))
                 .batchSize(5)
-                .flushInterval(10_000L)
+                .flushInterval(5_000L)
                 .logLevel(LogLevel.VERBOSE)
                 .logListener { level, tag, message, _ ->
                     Log.d("TrackFlowListener", "[$level] $tag: $message")

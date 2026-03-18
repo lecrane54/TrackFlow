@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I {} find {} -type f)",
+      "WebFetch(domain:firebase.google.com)",
+      "WebFetch(domain:developer.adobe.com)",
+      "WebFetch(domain:docs.mixpanel.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:experienceleague.adobe.com)",
+      "WebFetch(domain:mvnrepository.com)",
+      "Bash(where gradle)",
+      "Bash(\"/c/Users/lefeb/.gradle/wrapper/dists/gradle-8.7-bin/bhs2wmbdwecv87pi65oeuq5iu/gradle-8.7/bin/gradle\" --version)",
+      "Bash(\"/c/Users/lefeb/.gradle/wrapper/dists/gradle-8.7-bin/bhs2wmbdwecv87pi65oeuq5iu/gradle-8.7/bin/gradle\" wrapper --gradle-version 8.5)",
+      "Bash(./gradlew projects)",
+      "Bash(./gradlew :trackflow-core:assembleDebug)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(./gradlew :testapp:assembleDebug)",
+      "Bash(./gradlew :trackflow-provider-adobe-analytics:assembleDebug :trackflow-provider-adobe-edge:assembleDebug)",
+      "WebFetch(domain:central.sonatype.com)",
+      "WebFetch(domain:amplitude.com)",
+      "Bash(./gradlew :trackflow-provider-amplitude:assembleDebug)",
+      "Bash(git init)",
+      "Bash(git status -u)",
+      "Bash(git add testapp/build.gradle.kts testapp/src/main/java/com/trackflow/testapp/TestApp.kt trackflow-core/src/main/java/com/trackflow/core/TrackFlow.kt trackflow-core/src/main/java/com/trackflow/core/compose/TrackScreen.kt trackflow-core/src/main/java/com/trackflow/core/context/DefaultContextProvider.kt trackflow-core/src/main/java/com/trackflow/core/debug/DebugEventSink.kt trackflow-core/src/main/java/com/trackflow/core/event/Events.kt trackflow-core/src/main/java/com/trackflow/core/event/TrackFlowEvent.kt trackflow-core/src/main/java/com/trackflow/core/identity/IdentityManager.kt trackflow-core/src/main/java/com/trackflow/core/logging/TrackFlowLogger.kt trackflow-core/src/main/java/com/trackflow/core/middleware/TrackFlowMiddleware.kt trackflow-core/src/main/java/com/trackflow/core/payload/AnalyticsPayload.kt trackflow-core/src/main/java/com/trackflow/core/pipeline/EventBatcher.kt trackflow-core/src/main/java/com/trackflow/core/pipeline/EventDispatcher.kt trackflow-core/src/main/java/com/trackflow/core/pipeline/NetworkMonitor.kt trackflow-core/src/main/java/com/trackflow/core/pipeline/OfflineEventQueue.kt trackflow-core/src/main/java/com/trackflow/core/pipeline/RetryPolicy.kt trackflow-core/src/main/java/com/trackflow/core/provider/ProviderModels.kt trackflow-core/src/main/java/com/trackflow/core/session/SessionManager.kt trackflow-core/src/main/java/com/trackflow/core/util/MapExtensions.kt trackflow-provider-adobe-analytics/src/main/java/com/trackflow/provider/adobe/analytics/AdobeAnalyticsProvider.kt trackflow-provider-adobe-edge/src/main/java/com/trackflow/provider/adobe/edge/AdobeEdgeProvider.kt trackflow-provider-amplitude/src/main/java/com/trackflow/provider/amplitude/AmplitudeProvider.kt trackflow-provider-firebase/src/main/java/com/trackflow/provider/firebase/FirebaseProvider.kt trackflow-provider-mixpanel/src/main/java/com/trackflow/provider/mixpanel/MixpanelProvider.kt)",
+      "Bash(git commit:*)",
+      "Bash(git checkout -b v2)",
+      "Bash(git push -u origin v2)",
+      "Bash(gh pr:*)",
+      "Bash(where gh)",
+      "Bash(./gradlew :trackflow-debug:assembleDebug :testapp:assembleDebug)"
+    ]
+  }
+}

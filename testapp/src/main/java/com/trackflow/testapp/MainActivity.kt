@@ -29,14 +29,17 @@ import androidx.compose.ui.unit.dp
 import com.trackflow.core.TrackFlow
 import com.trackflow.core.compose.TrackScreen
 import com.trackflow.core.payload.AnalyticsPayload
+import com.trackflow.debug.TrackFlowDebugOverlay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    TestScreen()
+                TrackFlowDebugOverlay {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        TestScreen()
+                    }
                 }
             }
         }
@@ -65,9 +68,10 @@ fun TestScreen() {
 
         Button(onClick = {
             eventCounter++
-            TrackFlow.track("button_clicked",
+            TrackFlow.track("app_launch",
                 "click_count" to eventCounter,
-                "screen" to "test_screen"
+                "screen" to "test_screen",
+                "hm.filter.type" to "brand filter"
             )
             debugEvents = TrackFlow.debugEvents()
         }) {

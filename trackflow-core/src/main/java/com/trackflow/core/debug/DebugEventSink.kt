@@ -11,27 +11,33 @@ import java.util.concurrent.CopyOnWriteArrayList
  * safely read from any thread. This is primarily useful during development, automated
  * testing, or when building debug-overlay UIs that display tracked events in real time.
  */
-class DebugEventSink {
+class DebugEventSink(private val maxEvents: Int = 1000) {
 
     /** Thread-safe backing list for all recorded analytics payloads. */
     private val events = CopyOnWriteArrayList<AnalyticsPayload>()
 
     /**
      * Records a single analytics payload into the debug sink.
+     * Evicts the oldest event if the max capacity is reached.
      *
      * @param payload The [AnalyticsPayload] to store.
      */
     fun record(payload: AnalyticsPayload) {
         events.add(payload)
+        while (events.size > maxEvents) {
+            events.removeAt(0)
+        }
     }
 
     /**
      * Returns a snapshot of all recorded events as an immutable list.
      *
-     * The returned list is a defensive copy; modifications to it will not affect
-     * the internal event store.
-     *
      * @return An immutable [List] of all [AnalyticsPayload] instances recorded so far.
      */
     fun events(): List<AnalyticsPayload> = events.toList()
+
+    /** Clears all recorded events. */
+    fun clear() {
+        events.clear()
+    }
 }

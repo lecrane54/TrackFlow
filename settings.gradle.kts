@@ -19,6 +19,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "trackflow-android-sdk"
 include(":trackflow-core")
+include(":trackflow-debug")
 include(":testapp")
 include(":trackflow-provider-firebase")
 include(":trackflow-provider-adobe-analytics")

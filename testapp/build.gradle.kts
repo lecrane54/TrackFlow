@@ -43,6 +43,7 @@ android {
 
 dependencies {
     implementation(project(":trackflow-core"))
+    debugImplementation(project(":trackflow-debug"))  // only in debug builds
     implementation(project(":trackflow-provider-adobe-analytics"))
     implementation(project(":trackflow-provider-amplitude"))
 
