@@ -27,7 +27,10 @@
       "Bash(git push -u origin v2)",
       "Bash(gh pr:*)",
       "Bash(where gh)",
-      "Bash(./gradlew :trackflow-debug:assembleDebug :testapp:assembleDebug)"
+      "Bash(./gradlew :trackflow-debug:assembleDebug :testapp:assembleDebug)",
+      "Bash(./gradlew :trackflow-core:compileDebugKotlinAndroid)",
+      "Bash(./gradlew :trackflow-core:compileKotlinIosArm64)",
+      "Bash(ls -d /c/Users/lefeb/Downloads/trackflow-android-sdk-v4/trackflow-provider-*-ios/)"
     ]
   }
 }

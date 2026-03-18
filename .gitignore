@@ -65,3 +65,5 @@ captures/
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
 .idea/.name
+# Claude Code
+.claude/
